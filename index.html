@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0a0510">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>For You</title>
+<style>
+  /* ============================================================
+     EDIT ME  -  personalise this
+     ============================================================ */
+  :root {
+    --name:   "My Love";
+    --message:"a little something I made just for you";
+    --date:   "";
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  html, body {
+    width:100%; height:100%;
+    background:#0a0510;
+    overflow:hidden;
+    overscroll-behavior:none;
+    font-family: ui-rounded, "SF Pro Rounded", "Segoe UI Variable", "Segoe UI",
+                 system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    color:#f3e9ff;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  #app { position:fixed; inset:0; }
+
+  canvas#scene {
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    display:block;
+    touch-action:none;
+  }
+
+  /* ---------- vignette + soft bloom-bleed over the canvas ---------- */
+  #vignette {
+    position:absolute; inset:0; pointer-events:none;
+    background:
+      radial-gradient(120% 85% at 50% 42%, rgba(0,0,0,0) 38%, rgba(6,2,12,.55) 78%, rgba(4,1,8,.88) 100%);
+  }
+
+  /* ---------- top text block ---------- */
+  #headtext {
+    position:absolute; top:0; left:0; right:0;
+    padding:calc(env(safe-area-inset-top, 0px) + 22px) 20px 0;
+    text-align:center;
+    pointer-events:none;
+    z-index:5;
+    transition:opacity .6s ease, transform .6s ease;
+  }
+  #headtext .name {
+    font-size:clamp(26px, 8.2vw, 46px);
+    font-weight:700;
+    letter-spacing:.015em;
+    line-height:1.12;
+    background:linear-gradient(175deg,#fff6ff 6%,#ffb9f0 52%,#c79bff 100%);
+    -webkit-background-clip:text; background-clip:text;
+    color:transparent;
+    filter:drop-shadow(0 2px 18px rgba(214,120,255,.45));
+  }
+  #headtext .msg {
+    margin-top:9px;
+    font-size:clamp(12.5px, 3.6vw, 15.5px);
+    font-weight:400;
+    color:#e6d2f7;
+    opacity:.86;
+    line-height:1.5;
+    text-shadow:0 1px 12px rgba(0,0,0,.75);
+  }
+  #headtext .date {
+    margin-top:7px;
+    font-size:clamp(10.5px, 3vw, 12.5px);
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    color:#ff9ede;
+    opacity:.72;
+  }
+
+  /* ---------- bottom control bar ---------- */
+  #bar {
+    position:absolute;
+    left:0; right:0; bottom:0;
+    padding:14px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+    display:flex; gap:10px; justify-content:center; align-items:center;
+    z-index:6;
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  .btn {
+    min-width:48px; min-height:48px;
+    padding:0 17px;
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    border:1px solid rgba(255,180,240,.24);
+    border-radius:999px;
+    background:rgba(28,14,44,.5);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);
+    backdrop-filter:blur(16px) saturate(150%);
+    color:#ffd9f6;
+    font-size:13.5px; font-weight:600;
+    letter-spacing:.02em;
+    cursor:pointer;
+    transition:transform .16s ease, background .2s ease, border-color .2s ease, opacity .2s;
+    user-select:none;
+  }
+  .btn:active { transform:scale(.93); background:rgba(64,28,92,.72); }
+  .btn svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+  .btn.on { background:rgba(255,140,220,.24); border-color:rgba(255,180,240,.6); color:#fff; }
+  .btn[disabled] { opacity:.4; }
+
+  /* ---------- hint ---------- */
+  #hint {
+    position:absolute; left:0; right:0;
+    bottom:calc(env(safe-area-inset-bottom, 0px) + 84px);
+    text-align:center;
+    font-size:12.5px; color:#e9d4ff; opacity:.62;
+    pointer-events:none; z-index:5;
+    letter-spacing:.05em;
+    text-shadow:0 1px 10px rgba(0,0,0,.8);
+    animation:breathe 3.4s ease-in-out infinite;
+    transition:opacity .8s ease;
+  }
+  @keyframes breathe { 0%,100%{opacity:.30} 50%{opacity:.72} }
+
+  /* ---------- photo mode: hide chrome ---------- */
+  body.photo #headtext,
+  body.photo #bar,
+  body.photo #hint { opacity:0; pointer-events:none; transform:translateY(6px); }
+
+  #toast {
+    position:absolute; left:50%; top:calc(env(safe-area-inset-top,0px) + 14px);
+    transform:translateX(-50%) translateY(-140%);
+    background:rgba(20,10,32,.9);
+    border:1px solid rgba(255,180,240,.3);
+    color:#ffd9f6; font-size:12.5px; font-weight:600;
+    padding:9px 16px; border-radius:999px;
+    z-index:20; opacity:0; pointer-events:none;
+    transition:opacity .3s ease, transform .3s ease;
+    white-space:nowrap;
+    max-width:90vw; overflow:hidden; text-overflow:ellipsis;
+  }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ---------- loader ---------- */
+  #loader {
+    position:absolute; inset:0; z-index:50;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:20px;
+    background:radial-gradient(120% 100% at 50% 40%, #1a0b2c 0%, #0a0510 62%, #050208 100%);
+    transition:opacity .9s ease, visibility .9s;
+  }
+  #loader.done { opacity:0; visibility:hidden; }
+  #loader .candle {
+    width:3px; height:30px; border-radius:2px;
+    background:linear-gradient(#fff4dd,#e8c79a);
+    position:relative;
+    box-shadow:0 0 12px rgba(255,206,140,.5);
+  }
+  #loader .flame {
+    position:absolute; left:50%; top:-19px;
+    width:11px; height:17px; margin-left:-5.5px;
+    border-radius:50% 50% 46% 46% / 62% 62% 38% 38%;
+    background:radial-gradient(ellipse at 50% 72%, #fff 4%, #ffd36b 34%, #ff8a3d 66%, rgba(255,90,40,.15) 100%);
+    transform-origin:50% 100%;
+    animation:flicker .85s ease-in-out infinite alternate;
+    filter:blur(.3px);
+  }
+  @keyframes flicker {
+    from { transform:scaleY(.86) scaleX(1.04) translateY(1px); opacity:.85; }
+    to   { transform:scaleY(1.1)  scaleX(.95) translateY(-1.5px); opacity:1; }
+  }
+  #loader .lt {
+    font-size:13.5px; letter-spacing:.2em; text-transform:uppercase;
+    color:#cfa9e8; opacity:.85;
+  }
+  #track { width:min(230px,54vw); height:3px; border-radius:99px; background:rgba(255,255,255,.11); overflow:hidden; }
+  #fill { height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,#ffb347,#ff77c8); transition:width .28s ease; }
+  #pct { font-size:11.5px; color:#a98cc4; letter-spacing:.14em; min-height:1.2em; }
+  #err {
+    max-width:min(400px,86vw); text-align:center;
+    font-size:12.5px; line-height:1.6; color:#ffb0c4;
+  }
+
+  @media (max-height:520px) and (orientation:landscape) {
+    #headtext { padding-top:calc(env(safe-area-inset-top,0px) + 12px); }
+    #headtext .msg, #headtext .date { display:none; }
+    #hint { display:none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #loader .flame { animation:none; }
+    #hint { animation:none; opacity:.5; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="scene"></canvas>
+  <div id="vignette"></div>
+
+  <div id="headtext">
+    <div class="name" id="tName"></div>
+    <div class="msg"  id="tMsg"></div>
+    <div class="date" id="tDate"></div>
+  </div>
+
+  <div id="hint">drag to look &middot; tap the plushie</div>
+
+  <div id="bar">
+    <button class="btn" id="bSpin" title="Auto spin" aria-label="Toggle auto spin">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+    </button>
+    <button class="btn" id="bPhoto" title="Save a photo" aria-label="Save a photo">
+      <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg>
+    </button>
+    <button class="btn" id="bFull" title="Fullscreen" aria-label="Fullscreen">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="loader">
+    <div class="candle"><div class="flame"></div></div>
+    <div class="lt">lighting the candles</div>
+    <div id="track"><div id="fill"></div></div>
+    <div id="pct">0%</div>
+    <div id="err"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
+
+/* ============================================================
+   1. CONFIG  -  edit these three lines
+   ============================================================ */
+const CONFIG = {
+  name:    "My Love",
+  message: "a little something I made just for you",
+  date:    "",
+  model:   "./model/shadow_plushie.glb"
+};
+
+/* ============================================================
+   2. QUALITY  -  auto-detected, overridable via ?q=low|high
+   ============================================================ */
+const params = new URLSearchParams(location.search);
+const forced  = params.get('q');
+const isLow   = (() => {
+  if (forced) return forced === 'low';
+  const mem  = navigator.deviceMemory || 4;
+  const cpu  = navigator.hardwareConcurrency || 4;
+  const dpr  = window.devicePixelRatio || 1;
+  const small = Math.min(screen.width, screen.height) < 380;
+  return mem <= 3 || cpu <= 4 || (small && mem <= 4);
+})();
+
+const Q = {
+  dprCap:   isLow ? 1.5 : 2,
+  lights:   isLow ? 2 : 3,     // how many flames get a real PointLight
+  glow:     isLow ? 7  : 14,   // additive glow sprites
+  hearts:   isLow ? 90  : 220,
+  halo:     !isLow            // soft ambient halo behind the model
+};
+
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ============================================================
+   3. UI WIRING
+   ============================================================ */
+const $ = id => document.getElementById(id);
+$('tName').textContent = CONFIG.name;
+$('tMsg').textContent  = CONFIG.message;
+$('tDate').textContent = CONFIG.date || '';
+if (!CONFIG.date) $('tDate').style.display = 'none';
+
+let toastTimer;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function fail(msg) {
+  $('loader').classList.remove('done');
+  $('lt') && ($('loader').querySelector('.lt').textContent = 'could not load');
+  $('fill').style.background = '#ff6b8a';
+  $('pct').textContent = '';
+  $('err').textContent = msg;
+}
+
+/* ============================================================
+   4. RENDERER / SCENE / CAMERA
+   ============================================================ */
+const canvas = $('scene');
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: !isLow,
+  alpha: false,
+  powerPreference: 'high-performance',
+  preserveDrawingBuffer: true   // needed so photo mode can read the buffer
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.dprCap));
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0510);
+scene.fog = new THREE.FogExp2(0x0a0510, 0.042);
+
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 120);
+camera.position.set(3.6, 2.75, 5.4);
+
+const TARGET = new THREE.Vector3(0, 1.5, 0);
+const controls = new OrbitControls(camera, canvas);
+controls.target.copy(TARGET);
+controls.enableDamping = true;
+controls.dampingFactor = 0.055;
+controls.enablePan = false;
+controls.rotateSpeed = 0.85;
+controls.zoomSpeed = 0.8;
+controls.minDistance = 2.6;
+controls.maxDistance = 13;
+controls.minPolarAngle = 0.22;
+controls.maxPolarAngle = Math.PI * 0.495;   // never dip below the floor
+controls.autoRotate = !reduceMotion;
+controls.autoRotateSpeed = 0.85;
+controls.update();
+
+/* ============================================================
+   5. LIGHT RIG  -  violet night + warm candlelight
+   ============================================================ */
+const keyLight = new THREE.DirectionalLight(0xfff0d8, 2.35);
+keyLight.position.set(3.2, 6.0, 4.2);
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0xb98cff, 0.85);
+fillLight.position.set(-5.0, 2.4, -2.2);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xff9ad8, 1.5);
+rimLight.position.set(-2.2, 3.4, -5.5);
+scene.add(rimLight);
+
+scene.add(new THREE.HemisphereLight(0x9f7bff, 0x2a0f3a, 0.55));
+
+const ambient = new THREE.AmbientLight(0x5a3a7a, 0.4);
+scene.add(ambient);
+
+/* ============================================================
+   6. CANDLE GLOW
+   ------------------------------------------------------------
+   Done with additive sprites rather than an EffectComposer +
+   UnrealBloomPass chain. Two reasons:
+     * no render targets / no float buffers, so it cannot fail
+       on a weak or odd GPU and leave her a black screen
+     * far cheaper on a phone, which is where this will live
+   The model already carries additive halo quads of its own,
+   so the sprites just extend that look upward.
+   ============================================================ */
+function radialTexture(stops) {
+  const s = 128, c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  for (const [at, col] of stops) grd.addColorStop(at, col);
+  g.fillStyle = grd;
+  g.fillRect(0, 0, s, s);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+const glowTex = radialTexture([
+  [0.00, 'rgba(255,244,214,0.95)'],
+  [0.18, 'rgba(255,196,110,0.62)'],
+  [0.45, 'rgba(255,120,70,0.20)'],
+  [1.00, 'rgba(255,90,60,0)']
+]);
+
+const haloTex = radialTexture([
+  [0.00, 'rgba(190,140,255,0.30)'],
+  [0.40, 'rgba(140,90,220,0.14)'],
+  [1.00, 'rgba(90,50,160,0)']
+]);
+
+const glowGroup = new THREE.Group();
+scene.add(glowGroup);
+const glows = [];
+
+let haloSprite = null;
+function buildAmbientHalo() {
+  if (!Q.halo) return;
+  haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: haloTex, transparent: true, depthWrite: false, depthTest: false,
+    blending: THREE.AdditiveBlending, opacity: 0.55
+  }));
+  haloSprite.position.set(0, 1.4, 0);
+  haloSprite.scale.set(9.5, 9.5, 1);
+  haloSprite.renderOrder = -2;
+  scene.add(haloSprite);
+}
+
+/* ============================================================
+   7. LOAD THE MODEL
+   ============================================================ */
+const loader = new GLTFLoader();
+let model = null;
+let flameLights = [];
+let heartPoints = null;
+
+loader.load(
+  CONFIG.model,
+  (gltf) => {
+    model = gltf.scene;
+    prepareModel(model);
+    scene.add(model);
+    buildAmbientHalo();
+    buildHearts();
+    onLoaded();
+  },
+  (evt) => {
+    if (!evt.lengthComputable || !evt.total) return;
+    const p = Math.min(100, (evt.loaded / evt.total) * 100);
+    $('fill').style.width = p + '%';
+    $('pct').textContent = Math.round(p) + '%';
+  },
+  (err) => {
+    console.error(err);
+    fail('The 3D model could not be loaded. Check that model/shadow_plushie.glb sits next to index.html, then refresh.');
+  }
+);
+
+function prepareModel(root) {
+  const flameCandidates = [];
+
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const name = obj.name || '';
+    const mat = obj.material;
+
+    // --- cel outline shells: keep them pure black, push them out to kill z-fighting
+    if (/_Out_/.test(name)) {
+      obj.material = new THREE.MeshBasicMaterial({ color: 0x000000 });
+      obj.renderOrder = -1;
+      obj.material.polygonOffset = true;
+      obj.material.polygonOffsetFactor = 1.6;
+      obj.material.polygonOffsetUnits = 1.6;
+      return;
+    }
+
+    // --- flame quads: make them glow, never receive light
+    if (/_Flame_/.test(name)) {
+      obj.material = new THREE.MeshBasicMaterial({
+        map: mat.map, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+      });
+      obj.renderOrder = 3;
+      flameCandidates.push(obj);
+      return;
+    }
+
+    // --- halo quads: soft additive glow discs
+    if (/_Halo_/.test(name)) {
+      obj.material = new THREE.MeshBasicMaterial({
+        map: mat.map, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: 0.85
+      });
+      obj.renderOrder = 2;
+      return;
+    }
+
+    // --- base disc: soft contact shadow
+    if (/_Base_/.test(name)) {
+      obj.material = new THREE.MeshBasicMaterial({
+        map: mat.map, transparent: true, depthWrite: false, side: THREE.DoubleSide
+      });
+      obj.renderOrder = 1;
+      return;
+    }
+
+    // --- everything else (candles + plushie): unlit -> soft felt shading
+    if (mat.map) {
+      // This asset is an "unlit" Sketchfab model, so it ships with no normal
+      // attribute. That is harmless for the original MeshBasicMaterial, but every
+      // diffuse term of a MeshStandardMaterial evaluates to zero without it and the
+      // model renders pure black. Generate normals from the faces once.
+      if (!obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
+
+      const m = new THREE.MeshStandardMaterial({
+        map: mat.map,
+        roughness: 0.92,
+        metalness: 0.0,
+        side: THREE.DoubleSide
+      });
+      if (mat.emissiveMap) {
+        m.emissiveMap = mat.emissiveMap;
+        m.emissive = new THREE.Color(0x2a2a2a);
+        m.emissiveIntensity = 0.55;
+      }
+      obj.material = m;
+    }
+  });
+
+  // Put a real light on the biggest few flames only - 12 point lights is too many
+  // for a phone GPU.
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  flameCandidates.forEach((f) => {
+    f.getWorldPosition(f.userData.wp = f.userData.wp || new THREE.Vector3());
+  });
+  const byHeight = flameCandidates.slice().sort(
+    (a, b) => b.userData.wp.y - a.userData.wp.y
+  );
+  // spread the picks around the ring rather than just the tallest 3
+  const picks = [];
+  const step = Math.max(1, Math.floor(byHeight.length / Q.lights));
+  for (let i = 0; i < byHeight.length && picks.length < Q.lights; i += step) picks.push(byHeight[i]);
+
+  picks.forEach((f, i) => {
+    const l = new THREE.PointLight(0xffb066, 0, 3.4, 2);
+    f.getWorldPosition(l.position);
+    l.userData = { base: 5.2 + (i % 2) * 1.1, phase: i * 2.1, speed: 5.5 + i * 0.9 };
+    scene.add(l);
+    flameLights.push(l);
+  });
+
+  // additive glow on top of every flame - the stand-in for bloom
+  const glowTex2 = glowTex;
+  const gstep = Math.max(1, Math.ceil(flameCandidates.length / Q.glow));
+  for (let i = 0; i < flameCandidates.length; i += gstep) {
+    const f = flameCandidates[i];
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex2, transparent: true, depthWrite: false, depthTest: true,
+      blending: THREE.AdditiveBlending, opacity: 0.9
+    }));
+    f.getWorldPosition(s.position);
+    const sc = 0.62 + Math.random() * 0.16;
+    s.scale.set(sc, sc, 1);
+    s.userData = { phase: i * 1.37, speed: 4.0 + (i % 5) * 0.7, base: sc };
+    s.renderOrder = 4;
+    glowGroup.add(s);
+    glows.push(s);
+  }
+
+  // gentle idle bob on the whole model - there are no animation clips
+  model.userData.bobPhase = 0;
+  model.userData.baseY = model.position.y;
+  model.userData.size = size;
+}
+
+function onLoaded() {
+  $('fill').style.width = '100%';
+  $('pct').textContent = '100%';
+  setTimeout(() => {
+    $('loader').classList.add('done');
+    setTimeout(() => $('hint').style.opacity = '0', 5200);
+  }, 340);
+}
+
+/* ============================================================
+   8. HEARTS  -  tap the plushie
+   ============================================================ */
+function heartTexture() {
+  const s = 128, c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, s, s);
+  g.fillStyle = '#fff';
+  g.beginPath();
+  const x = s / 2, y = s * 0.30, w = s * 0.40, h = s * 0.40;
+  g.moveTo(x, y + h * 0.85);
+  g.bezierCurveTo(x - w * 1.55, y - h * 0.30, x - w * 0.42, y - h * 1.18, x, y - h * 0.28);
+  g.bezierCurveTo(x + w * 0.42, y - h * 1.18, x + w * 1.55, y - h * 0.30, x, y + h * 0.85);
+  g.closePath();
+  g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+const hearts = {
+  count: 0, max: 0, pos: null, vel: null, life: null, geo: null, mat: null, mesh: null, cursor: 0
+};
+
+function buildHearts() {
+  hearts.max = Q.hearts;
+  hearts.pos = new Float32Array(hearts.max * 3);
+  hearts.vel = new Float32Array(hearts.max * 3);
+  hearts.life = new Float32Array(hearts.max);       // 0 = dead
+  hearts.geo = new THREE.BufferGeometry();
+  hearts.geo.setAttribute('position', new THREE.BufferAttribute(hearts.pos, 3));
+  const colors = new Float32Array(hearts.max * 3);
+  hearts.geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  hearts.baseColors = new Float32Array(hearts.max * 3);
+  hearts.mat = new THREE.PointsMaterial({
+    size: 0.19, map: heartTexture(), transparent: true, depthWrite: false,
+    vertexColors: true, blending: THREE.AdditiveBlending, sizeAttenuation: true
+  });
+  hearts.mesh = new THREE.Points(hearts.geo, hearts.mat);
+  hearts.mesh.frustumCulled = false;
+  hearts.mesh.renderOrder = 10;
+  hearts.colorAttr = hearts.geo.getAttribute('color');
+  hearts.colors = colors;
+  scene.add(hearts.mesh);
+  heartPoints = hearts.mesh;
+}
+
+const HEART_PALETTE = [
+  [1.00, 0.45, 0.78], [1.00, 0.62, 0.86],
+  [0.80, 0.55, 1.00], [1.00, 0.36, 0.60]
+];
+
+function spawnHearts(origin, count) {
+  if (!hearts.geo) return;
+  const c = new THREE.Color();
+  for (let k = 0; k < count; k++) {
+    const i = hearts.cursor;
+    hearts.cursor = (hearts.cursor + 1) % hearts.max;
+    hearts.pos[i * 3]     = origin.x + (Math.random() - 0.5) * 0.55;
+    hearts.pos[i * 3 + 1] = origin.y + (Math.random() - 0.5) * 0.35;
+    hearts.pos[i * 3 + 2] = origin.z + (Math.random() - 0.5) * 0.55;
+    hearts.vel[i * 3]     = (Math.random() - 0.5) * 0.42;
+    hearts.vel[i * 3 + 1] = 0.75 + Math.random() * 0.85;
+    hearts.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.42;
+    hearts.life[i] = 1;
+    const p = HEART_PALETTE[(Math.random() * HEART_PALETTE.length) | 0];
+    c.setRGB(p[0], p[1], p[2]);
+    c.toArray(hearts.baseColors, i * 3);
+    c.toArray(hearts.colors, i * 3);
+  }
+  hearts.colorAttr.needsUpdate = true;
+}
+
+function updateHearts(dt) {
+  if (!hearts.geo) return;
+  let alive = false;
+  for (let i = 0; i < hearts.max; i++) {
+    if (hearts.life[i] <= 0) continue;
+    alive = true;
+    hearts.life[i] -= dt * 0.55;
+    if (hearts.life[i] <= 0) { hearts.life[i] = 0; continue; }
+    const i3 = i * 3;
+    hearts.vel[i3 + 1] += dt * 0.18;                 // gentle upward buoyancy
+    hearts.vel[i3]     += Math.sin(hearts.life[i] * 7 + i) * dt * 0.28;  // sway
+    hearts.pos[i3]     += hearts.vel[i3]     * dt;
+    hearts.pos[i3 + 1] += hearts.vel[i3 + 1] * dt;
+    hearts.pos[i3 + 2] += hearts.vel[i3 + 2] * dt;
+    hearts.vel[i3]     *= 0.99;
+    hearts.vel[i3 + 2] *= 0.99;
+  }
+  if (alive) hearts.geo.getAttribute('position').needsUpdate = true;
+}
+
+function fadeHeartColors() {
+  if (!hearts.geo) return;
+  for (let i = 0; i < hearts.max; i++) {
+    const l = hearts.life[i];
+    const i3 = i * 3;
+    if (l <= 0) {
+      hearts.colors[i3] = hearts.colors[i3 + 1] = hearts.colors[i3 + 2] = 0;
+    } else {
+      const f = Math.min(1, l * 1.6);           // hold full colour, then fade out
+      const base = hearts.baseColors[i3] * f;
+      hearts.colors[i3] = base;
+      hearts.colors[i3 + 1] = hearts.baseColors[i3 + 1] * f;
+      hearts.colors[i3 + 2] = hearts.baseColors[i3 + 2] * f;
+    }
+  }
+  hearts.colorAttr.needsUpdate = true;
+}
+
+/* ---------- raycast: tap the plushie specifically ---------- */
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let downX = 0, downY = 0, downT = 0, moved = false;
+
+canvas.addEventListener('pointerdown', (e) => {
+  downX = e.clientX; downY = e.clientY; downT = performance.now(); moved = false;
+  controls.autoRotate = false;
+  $('bSpin').classList.remove('on');
+  if (reduceMotion) return;
+  if (e.pointerType !== 'mouse') return;   // touch handled on pointerup to allow drag
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 12) moved = true;
+});
+
+canvas.addEventListener('pointerup', (e) => {
+  const quick = performance.now() - downT < 420;
+  if (!quick || moved || !model) return;
+
+  ndc.x = (e.clientX / innerWidth) * 2 - 1;
+  ndc.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ndc, camera);
+
+  const hits = ray.intersectObject(model, true);
+  const plushie = hits.find(h => /Plushie_Plushie_/.test(h.object.name || ''));
+  if (plushie) {
+    const n = reduceMotion ? 0 : (isLow ? 9 : 16);
+    if (n) spawnHearts(plushie.point, n);
+  }
+});
+
+// resume idle spin after a few seconds of no touching
+let idleTimer;
+function scheduleIdle() {
+  clearTimeout(idleTimer);
+  if (reduceMotion) return;
+  idleTimer = setTimeout(() => {
+    controls.autoRotate = true;
+    $('bSpin').classList.add('on');
+  }, 4200);
+}
+canvas.addEventListener('pointerup', scheduleIdle);
+canvas.addEventListener('pointercancel', scheduleIdle);
+
+/* ============================================================
+   9. BUTTONS
+   ============================================================ */
+$('bSpin').addEventListener('click', () => {
+  controls.autoRotate = !controls.autoRotate;
+  $('bSpin').classList.toggle('on', controls.autoRotate);
+  if (controls.autoRotate) clearTimeout(idleTimer);
+});
+$('bSpin').classList.toggle('on', controls.autoRotate);
+
+$('bFull').addEventListener('click', () => {
+  const el = document.documentElement;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+  }
+});
+
+let shooting = false;
+$('bPhoto').addEventListener('click', async () => {
+  if (shooting || !model) return;
+  shooting = true;
+  const btn = $('bPhoto');
+  btn.disabled = true;
+  try {
+    document.body.classList.add('photo');
+    controls.autoRotate = false;
+    await new Promise(r => setTimeout(r, 480));       // let the UI fade out
+    renderFrame(0.016);
+    const url = renderer.domElement.toDataURL('image/png');
+    const a = document.createElement('a');
+    const safe = (CONFIG.name || 'photo').replace(/[^\w\-]+/g, '_').slice(0, 40);
+    a.href = url;
+    a.download = safe + '.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast('Saved to your downloads');
+  } catch (err) {
+    console.error(err);
+    toast('Could not save the photo');
+  } finally {
+    document.body.classList.remove('photo');
+    btn.disabled = false;
+    shooting = false;
+    scheduleIdle();
+  }
+});
+
+/* ============================================================
+   10. RESIZE  (orientation changes, iOS address-bar collapse)
+   ============================================================ */
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.dprCap));
+  renderer.setSize(w, h, false);
+}
+addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(resize, 220));
+if (window.visualViewport) visualViewport.addEventListener('resize', resize);
+resize();
+
+/* ============================================================
+   11. RENDER LOOP
+   ============================================================ */
+const clock = new THREE.Clock();
+let fpsAccum = 0, fpsFrames = 0, downgraded = false;
+
+function renderFrame(dt) {
+  renderer.render(scene, camera);
+}
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.elapsedTime;
+
+  // --- candlelight flicker: layered sines so it never visibly loops
+  for (const l of flameLights) {
+    const u = l.userData;
+    const f =
+      Math.sin(t * u.speed + u.phase) * 0.5 +
+      Math.sin(t * u.speed * 2.37 + u.phase * 1.7) * 0.3 +
+      Math.sin(t * u.speed * 4.11 + u.phase * 0.6) * 0.2;
+    l.intensity = u.base * (0.80 + f * 0.20);
+  }
+
+  // --- glow sprites breathe in sympathy with their flames
+  for (const s of glows) {
+    const u = s.userData;
+    const f = Math.sin(t * u.speed + u.phase) * 0.6 + Math.sin(t * u.speed * 2.9 + u.phase) * 0.4;
+    const k = u.base * (0.86 + f * 0.14);
+    s.scale.set(k, k, 1);
+    s.material.opacity = 0.72 + f * 0.18;
+  }
+
+  if (haloSprite) {
+    const p = 0.46 + Math.sin(t * 0.42) * 0.07;
+    haloSprite.material.opacity = p;
+  }
+
+  // --- model idle bob + a very slow sway
+  if (model && !reduceMotion) {
+    model.position.y = model.userData.baseY + Math.sin(t * 0.85) * 0.035;
+    model.rotation.y = Math.sin(t * 0.31) * 0.022;
+  }
+
+  // --- the whole light rig breathes gently
+  if (!reduceMotion) {
+    const b = 1 + Math.sin(t * 0.55) * 0.05;
+    keyLight.intensity = 2.35 * b;
+    rimLight.intensity = 1.5 * (2 - b);
+  }
+
+  updateHearts(dt);
+  if (hearts.geo) fadeHeartColors();
+
+  controls.update();
+  renderFrame(dt);
+
+  // --- if the first couple of seconds are rough, drop resolution once
+  if (!downgraded) {
+    fpsAccum += dt; fpsFrames++;
+    if (fpsAccum > 2.5) {
+      if (fpsFrames / fpsAccum < 40 && renderer.getPixelRatio() > 1) {
+        renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.25));
+        resize();
+      }
+      downgraded = true;
+    }
+  }
+}
+tick();
+
+/* ============================================================
+   12. FADE THE CHROME IN
+   ============================================================ */
+requestAnimationFrame(() => {
+  ['headtext', 'bar', 'hint'].forEach(id => {
+    const el = $(id);
+    if (el) { el.style.opacity = ''; }
+  });
+});
+</script>
+</body>
+</html>
